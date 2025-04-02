@@ -1,1 +1,4 @@
 joblib
+matplotlib
+plotly
+scikit-learn
