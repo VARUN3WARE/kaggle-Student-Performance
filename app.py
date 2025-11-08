@@ -66,15 +66,22 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Load the trained model
-@st.cache_resource
-def load_models():
-    ridge_model = joblib.load('models/best_ridge_model.pkl')
-    rf_model = joblib.load('models/best_rf_model.pkl')
-    scaler = joblib.load('models/scaler.pkl')
-    return ridge_model, rf_model, scaler
+# Load the trained model using helpers in src/predict.py
+from src.predict import load_models as load_models_from_src, predict_from_inputs
 
-ridge_model, rf_model, scaler = load_models()
+
+@st.cache_resource
+def get_models():
+    """Cached wrapper around src.predict.load_models.
+
+    Keeping the cache_local decorator here keeps the Streamlit app fast while
+    delegating file/path logic to src/predict.
+    """
+    return load_models_from_src("models")
+
+
+# ridge_model, rf_model, transformer are used throughout the app
+ridge_model, rf_model, transformer = get_models()
 
 # Sidebar
 with st.sidebar:
@@ -125,18 +132,24 @@ st.markdown("<h1 class='main-header'>📚 Student Performance Prediction</h1>", 
 tab1, tab2 = st.tabs(["Prediction", "Model Comparison"])
 
 with tab1:
-    # Process the input data
-    extracurricular_numeric = 1 if extracurricular == "Yes" else 0
-    input_data = np.array([[hours_studied, previous_scores, extracurricular_numeric, sleep_hours, sample_papers_practiced]])
-    input_data_scaled = scaler.transform(input_data)
-    
-    # Make prediction based on the selected model
-    if model_choice == "Ridge Regression":
-        prediction = ridge_model.predict(input_data_scaled)
-        model_confidence = 0.989  # R² value for Ridge
-    else:
-        prediction = rf_model.predict(input_data_scaled)
-        model_confidence = 0.987  # R² value for Random Forest
+    # Process the input and get a prediction using the centralized helper.
+    # `predict_from_inputs` takes care of transforming the input with the
+    # saved transformer and returning a single float prediction.
+    prediction_value = predict_from_inputs(
+        hours_studied,
+        previous_scores,
+        extracurricular,
+        sleep_hours,
+        sample_papers_practiced,
+        ridge_model,
+        rf_model,
+        transformer,
+        model_choice=model_choice,
+    )
+
+    # Keep earlier code expectations of `prediction` being indexable
+    prediction = [prediction_value]
+    model_confidence = 0.989 if model_choice == "Ridge Regression" else 0.987
     
     # Show input summary
     col1, col2, col3 = st.columns(3)
@@ -257,8 +270,10 @@ with tab2:
     
     # Sample prediction comparison
     models = ["Ridge Regression", "Random Forest"]
-    ridge_pred = ridge_model.predict(input_data_scaled)[0]
-    rf_pred = rf_model.predict(input_data_scaled)[0]
+    # Compare current prediction from both models (use the helper so
+    # transformations and column-name handling remain consistent).
+    ridge_pred = predict_from_inputs(hours_studied, previous_scores, extracurricular, sleep_hours, sample_papers_practiced, ridge_model, rf_model, transformer, model_choice="Ridge Regression")
+    rf_pred = predict_from_inputs(hours_studied, previous_scores, extracurricular, sleep_hours, sample_papers_practiced, ridge_model, rf_model, transformer, model_choice="Random Forest")
     predictions = [ridge_pred, rf_pred]
     
     fig = px.bar(
@@ -306,12 +321,11 @@ with what_if_col1:
     what_if_predictions = []
     
     for h in what_if_hours:
-        what_if_data = np.array([[h, previous_scores, extracurricular_numeric, sleep_hours, sample_papers_practiced]])
-        what_if_data_scaled = scaler.transform(what_if_data)
-        if model_choice == "Ridge Regression":
-            what_if_predictions.append(ridge_model.predict(what_if_data_scaled)[0])
-        else:
-            what_if_predictions.append(rf_model.predict(what_if_data_scaled)[0])
+        # Use helper to ensure transform is applied correctly regardless of
+        # transformer internals (DataFrame vs numpy-based transformers)
+        what_if_predictions.append(
+            predict_from_inputs(h, previous_scores, extracurricular, sleep_hours, sample_papers_practiced, ridge_model, rf_model, transformer, model_choice=model_choice)
+        )
     
     # Plot what-if analysis for study hours
     fig = px.line(
@@ -344,12 +358,9 @@ with what_if_col2:
     what_if_predictions = []
     
     for p in what_if_papers:
-        what_if_data = np.array([[hours_studied, previous_scores, extracurricular_numeric, sleep_hours, p]])
-        what_if_data_scaled = scaler.transform(what_if_data)
-        if model_choice == "Ridge Regression":
-            what_if_predictions.append(ridge_model.predict(what_if_data_scaled)[0])
-        else:
-            what_if_predictions.append(rf_model.predict(what_if_data_scaled)[0])
+        what_if_predictions.append(
+            predict_from_inputs(hours_studied, previous_scores, extracurricular, sleep_hours, p, ridge_model, rf_model, transformer, model_choice=model_choice)
+        )
     
     # Plot what-if analysis for practice papers
     fig = px.line(

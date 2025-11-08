@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main, v2-dev]
+  pull_request:
+    branches: [main, v2-dev]
+
+jobs:
+  test-and-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          # Ensure optional visualization and tracking libs are available in CI
+          pip install plotly mlflow wandb
+
+      - name: Run tests
+        run: pytest -q
+
+      - name: Smoke train (fast)
+        run: |
+          # Run a lightweight quick training using the new model training module
+          python src/model_training.py --data datasets/Student_Performance.csv --out-dir models-smoke --quick
+
+      - name: Smoke train validation
+        run: |
+          # Ensure the quick training produced a summary file
+          if [ ! -f models-smoke/training_summary.csv ]; then
+            echo "training_summary.csv not found in models-smoke"; exit 1; fi
