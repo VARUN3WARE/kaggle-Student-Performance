@@ -89,6 +89,7 @@ def train_models(
     quick: bool = False,
     log_mlflow: bool = False,
     log_wandb: bool = False,
+    register_best: bool = False,
 ) -> pd.DataFrame:
     """Train a set of candidate models, tune hyperparameters and save results.
 
@@ -174,6 +175,11 @@ def train_models(
                 mlflow.log_params(gs.best_params_)
                 mlflow.log_metrics(metrics)
                 mlflow.sklearn.log_model(best, artifact_path=name)
+                # capture run id and artifact path for optional registry
+                try:
+                    run_id = mlflow.active_run().info.run_id
+                except Exception:
+                    run_id = None
 
         if log_wandb and WANDB_AVAILABLE:
             # Log params and metrics to W&B and upload the model file as an
@@ -185,7 +191,7 @@ def train_models(
             artifact.add_file(model_path)
             wandb.log_artifact(artifact)
 
-        results.append({"model": name, "metrics": metrics, "path": model_path, "best_params": gs.best_params_})
+    results.append({"model": name, "metrics": metrics, "path": model_path, "best_params": gs.best_params_, "mlflow_run_id": run_id if (log_mlflow and MLFLOW_AVAILABLE) else None, "mlflow_artifact_path": name if (log_mlflow and MLFLOW_AVAILABLE) else None})
 
     # Summarize results into DataFrame
     rows = []
@@ -212,6 +218,27 @@ def train_models(
     except Exception:
         pass
 
+    # Optionally register the best model in MLflow Model Registry
+    if register_best and (log_mlflow and MLFLOW_AVAILABLE):
+        try:
+            # pick best by r2 (df_res is sorted descending by r2)
+            best_row = df_res.iloc[0]
+            best_model_name = best_row["model"]
+            # find corresponding run info from results list
+            best_entry = next((r for r in results if r["model"] == best_model_name), None)
+            if best_entry and best_entry.get("mlflow_run_id") and best_entry.get("mlflow_artifact_path"):
+                model_uri = f"runs:/{best_entry['mlflow_run_id']}/{best_entry['mlflow_artifact_path']}"
+                registry_name = "student_performance_v2"
+                try:
+                    mv = mlflow.register_model(model_uri, registry_name)
+                    print(f"Registered model {registry_name} version: {mv.version}")
+                except Exception as e:
+                    print("Model registry registration failed:", e)
+            else:
+                print("No MLflow run info available for best model; skipping registry registration.")
+        except Exception as e:
+            print("Failed to register best model:", e)
+
     return df_res
 
 
@@ -224,6 +251,9 @@ if __name__ == "__main__":
     p.add_argument("--cv", type=int, default=3)
     p.add_argument("--quick", action="store_true", help="Run quick, lightweight tuning")
     p.add_argument("--mlflow", action="store_true", help="Log runs to MLflow if available")
+    p.add_argument("--register", action="store_true", help="Register the best model in the MLflow Model Registry (requires --mlflow)")
+    p.add_argument("--tracking-uri", "--tracking_uri", dest="tracking_uri", default=None,
+                   help="Optional MLflow tracking URI (overrides MLFLOW_TRACKING_URI env var)")
     args = p.parse_args()
 
     df = pd.read_csv(args.data)
@@ -235,5 +265,13 @@ if __name__ == "__main__":
         y = df[df.columns[-1]]
         X = df.drop(columns=[df.columns[-1]])
 
-    summary = train_models(X, y, out_dir=args.out_dir, cv=args.cv, quick=args.quick, log_mlflow=args.mlflow)
+    # If MLflow is requested and a tracking URI was provided, configure it.
+    if args.mlflow and args.tracking_uri and MLFLOW_AVAILABLE:
+        try:
+            mlflow.set_tracking_uri(args.tracking_uri)
+        except Exception:
+            # ignore if mlflow isn't available or set fails; env var may be used instead
+            pass
+
+    summary = train_models(X, y, out_dir=args.out_dir, cv=args.cv, quick=args.quick, log_mlflow=args.mlflow, register_best=args.register)
     print(summary)

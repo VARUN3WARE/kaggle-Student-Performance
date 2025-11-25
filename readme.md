@@ -65,3 +65,73 @@ Or keep the local `sys.path` workaround (already present in `app/app_v2.py`) for
 - Added SHAP explainability scripts and precomputed images in `reports/feature_importance/`
 - Streamlit v2 app with cached explainers and per-sample waterfall plots
 - pytest: quick training smoke test
+
+## Local MLflow-only (no external services)
+
+If you prefer to keep everything local and avoid external services, there's a lightweight compose stack that runs MLflow using a local SQLite backend and a filesystem artifact store — no MinIO, no Postgres, no paid services.
+
+Files to use:
+
+- `docker-compose.mlflow-local.yml` — starts a single MLflow service backed by sqlite and local disk artifacts.
+
+Quick start (local-only):
+
+```bash
+# build and start the local MLflow server
+docker compose -f docker-compose.mlflow-local.yml up -d --build
+
+# open MLflow UI
+open http://localhost:5000
+```
+
+Point your training runs to the server:
+
+```bash
+export MLFLOW_TRACKING_URI=http://localhost:5000
+python src/model_training.py --data data/processed/processed_student_data.csv --out-dir models --mlflow --tracking-uri $MLFLOW_TRACKING_URI
+```
+
+Notes:
+
+- This setup stores artifacts and the MLflow sqlite DB under a Docker volume named `mlflow_data`. You can back this up or mount a host directory if you want persistent files outside Docker.
+- This stack is for local development and experimentation only. For production consider using managed storage and a proper database.
+
+### Registering best model in MLflow Model Registry
+
+If you want training to automatically register the best model in the MLflow Model Registry (local server), use the `--register` flag together with `--mlflow` when running the training script:
+
+```bash
+# locally (requires MLFLOW_TRACKING_URI pointing at your local server):
+python src/model_training.py --data data/processed/processed_student_data.csv --out-dir models --mlflow --register
+
+# or using the trainer image (Linux) with host networking:
+docker run --rm -it --network host \
+	-v "$PWD":/workspace:cached \
+	-v "$PWD/mlflow":/mlflow \
+	-e MLFLOW_TRACKING_URI=http://localhost:5000 \
+	-w /workspace \
+	kaggle-student-performance-trainer \
+	python src/model_training.py --data data/processed/processed_student_data.csv --out-dir models --mlflow --register
+```
+
+The script will register the top-performing model (by R^2) under the registry name `student_performance_v2`. You can view registered models in the MLflow UI under the "Models" tab.
+
+### Convenience: Makefile targets
+
+I've added a small `Makefile` with helpful targets for local development:
+
+```bash
+# build and start mlflow + trainer image
+make mlflow-up
+
+# build trainer image only (injects your UID/GID so files aren't root-owned)
+make build-trainer
+
+# run training using the trainer image on the host network (Linux)
+make train
+
+# stop mlflow stack
+make mlflow-down
+```
+
+These targets just wrap the same docker-compose / docker run commands demonstrated earlier and are intended for developer convenience.

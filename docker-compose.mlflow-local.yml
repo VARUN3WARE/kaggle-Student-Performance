@@ -1,0 +1,44 @@
+services:
+  mlflow-local:
+    build: ./ops/mlflow
+    environment:
+      # Use a local sqlite DB for the backend store (dev only)
+      BACKEND_STORE_URI: sqlite:////mlflow/mlflow.db
+      # Use local filesystem for artifacts
+      ARTIFACT_ROOT: file:///mlflow/artifacts
+      # Disable webpack dev-server host header checks used by the MLflow UI
+      # when the UI assets start a dev server; this avoids "Invalid Host header"
+      # errors in local docker networks. This is a DEV convenience only.
+      DANGEROUSLY_DISABLE_HOST_CHECK: "true"
+      # ensure the mlflow server binds to all interfaces
+      HOST: 0.0.0.0
+    ports:
+      - "5000:5000"
+    volumes:
+      # bind the host ./mlflow directory to /mlflow inside the container so
+      # artifacts and the sqlite DB persist on the host and are easier to
+      # inspect/backup. Ensure ./mlflow exists and is writable by Docker.
+      - ./mlflow:/mlflow
+
+  trainer:
+    build:
+      context: .
+      dockerfile: ./ops/trainer/Dockerfile
+      args:
+        # provide defaults; you can override by exporting UID/GID env vars
+        USER_ID: ${UID:-1000}
+        GROUP_ID: ${GID:-1000}
+    working_dir: /workspace
+    # run the container with the host UID:GID when available to reduce
+    # permission mismatches for files created in bind mounts
+    user: "${UID:-1000}:${GID:-1000}"
+    volumes:
+      - ./:/workspace:cached
+      - ./mlflow:/mlflow
+    environment:
+      # point the trainer to the mlflow server by service name
+      MLFLOW_TRACKING_URI: http://mlflow-local:5000
+    depends_on:
+      - mlflow-local
+    tty: true
+# note: we use a host bind mount for mlflow data (./mlflow)
