@@ -2,10 +2,6 @@
 
 This project is based on the **Kaggle Student Performance** dataset, which is used to predict students' final grades based on various features like study time, past grades, and school-related factors. The project includes several machine learning models to predict student performance and compares them after hyperparameter tuning. The app is deployed using Streamlit for interactive visualization.
 ![....](image.png)
-[Live Demo](https://kaggle-student-performance-varunrao.streamlit.app/)
-
-[Link to kaggle Notebook](https://www.kaggle.com/code/varunraosfanlkan/notebook3ac0f15a42)
-
 A compact, reproducible ML project that predicts student final scores and explains predictions with SHAP.
 
 This repository includes:
@@ -14,6 +10,10 @@ This repository includes:
 - Training utilities and scripts (`src/model_training.py`, `scripts/train.py`)
 - Explainability scripts (`scripts/generate_shap_reports.py`) and precomputed SHAP visuals
 - An interactive Streamlit demo: `app/app_v2.py`
+
+[Live Demo](https://kaggle-student-performance-varunrao.streamlit.app/)
+
+[Link to kaggle Notebook](https://www.kaggle.com/code/varunraosfanlkan/notebook3ac0f15a42)
 
 ## Key artifacts / visuals
 
