@@ -1,7 +1,7 @@
 # Kaggle Student Performance Prediction — v2
 
 This project is based on the **Kaggle Student Performance** dataset, which is used to predict students' final grades based on various features like study time, past grades, and school-related factors. The project includes several machine learning models to predict student performance and compares them after hyperparameter tuning. The app is deployed using Streamlit for interactive visualization.
-
+![....](image.png)
 [Live Demo](https://kaggle-student-performance-varunrao.streamlit.app/)
 
 [Link to kaggle Notebook](https://www.kaggle.com/code/varunraosfanlkan/notebook3ac0f15a42)
